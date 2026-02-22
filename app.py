@@ -1,9 +1,10 @@
-# ★ Murlidhar Academy MCQ Generator (Stable Math Version) ★
+# ★ Murlidhar Academy MCQ Generator (Textbook Stacked Fraction + Toggle) ★
 
 import streamlit as st
 import re
 from docx import Document
 from docx.shared import Pt
+from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 import tempfile
 import requests
@@ -15,99 +16,59 @@ import os
 
 st.set_page_config(page_title="Murlidhar MCQ Generator", layout="wide")
 
-st.title("📄 Murlidhar Academy MCQ Paper Generator (Pro + Math Stable)")
-st.markdown("Default Template: Google Drive | Optional: Upload New Template")
+st.title("📄 Murlidhar Academy MCQ Generator (Textbook Maths Engine)")
 
 DEFAULT_TEMPLATE_URL = "https://docs.google.com/document/d/1JMow6oJ2ASJah5vM4OK1Q-uYPefiMnEg/export?format=docx"
 
 # -------------------------------------------------
-# SAFE MATH FORMATTER (FIXED)
+# SUBJECT TOGGLE
 # -------------------------------------------------
 
-def fix_math_formatting(text):
+subject = st.selectbox("Select Subject", ["Other Subject", "Maths"])
 
+math_mode = (subject == "Maths")
+
+# -------------------------------------------------
+# STACKED FRACTION ENGINE
+# -------------------------------------------------
+
+def add_stacked_fraction(paragraph, numerator, denominator):
+
+    omath = OxmlElement('m:oMath')
+    fraction = OxmlElement('m:f')
+
+    num = OxmlElement('m:num')
+    num_run = OxmlElement('m:r')
+    num_text = OxmlElement('m:t')
+    num_text.text = numerator
+    num_run.append(num_text)
+    num.append(num_run)
+
+    den = OxmlElement('m:den')
+    den_run = OxmlElement('m:r')
+    den_text = OxmlElement('m:t')
+    den_text.text = denominator
+    den_run.append(den_text)
+    den.append(den_run)
+
+    fraction.append(num)
+    fraction.append(den)
+    omath.append(fraction)
+
+    paragraph._element.append(omath)
+
+# -------------------------------------------------
+# MATH FORMATTER (ONLY BASIC CLEAN)
+# -------------------------------------------------
+
+def clean_text(text):
     if not text:
         return ""
-
     text = text.replace("$", "")
-
-    # Fractions
-    text = re.sub(r'\\frac\{([^{}]+)\}\{([^{}]+)\}', r'\1/\2', text)
-
-    # Root with index
-    text = re.sub(r'\\sqrt\[([^\]]+)\]\{([^{}]+)\}', r'\1√(\2)', text)
-
-    # Normal root
-    text = re.sub(r'\\sqrt\{([^{}]+)\}', r'√(\1)', text)
-
-    # Multiply / Divide
     text = text.replace("\\times", "×")
     text = text.replace("\\div", "÷")
-
-    # Infinity
     text = text.replace("\\infty", "∞")
-
-    # Superscript map
-    superscripts = {
-        "0":"⁰","1":"¹","2":"²","3":"³","4":"⁴",
-        "5":"⁵","6":"⁶","7":"⁷","8":"⁸","9":"⁹",
-        "-":"⁻",".":"·",
-        "a":"ᵃ","b":"ᵇ","c":"ᶜ",
-        "x":"ˣ","y":"ʸ","z":"ᶻ"
-    }
-
-    # Handle ^{...}
-    def replace_power_braces(match):
-        content = match.group(1)
-        return "".join(superscripts.get(ch, ch) for ch in content)
-
-    text = re.sub(r'\^\{([^{}]+)\}', replace_power_braces, text)
-
-    # Handle ^number
-    def replace_power_simple(match):
-        content = match.group(1)
-        return "".join(superscripts.get(ch, ch) for ch in content)
-
-    text = re.sub(r'\^(-?\d+\.?\d*)', replace_power_simple, text)
-
-    # Remove leftover slashes
-    text = text.replace("\\", "")
-
     return text
-
-
-# -------------------------------------------------
-# TEXT CLEANER
-# -------------------------------------------------
-
-def clean_garbage_text(text, keep_pipe=False):
-
-    if not text:
-        return ""
-
-    text = re.sub(r'\[cite.*?\]', '', text)
-    text = re.sub(r'\[source.*?\]', '', text)
-    text = re.sub(r'\[cite_start\]', '', text)
-
-    if not keep_pipe:
-        text = text.replace('|', '')
-
-    text = text.replace('\r\n', '\n').replace('\r', '\n')
-    text = re.sub(r'\n+', '\n', text)
-
-    # Apply math fix safely
-    text = fix_math_formatting(text)
-
-    lines = text.split('\n')
-    cleaned_lines = []
-
-    for line in lines:
-        clean_line = re.sub(r'\s+', ' ', line).strip()
-        if clean_line:
-            cleaned_lines.append(clean_line)
-
-    return "\n".join(cleaned_lines)
-
 
 # -------------------------------------------------
 # PARSE MCQ
@@ -132,7 +93,7 @@ def parse_mcq_text(raw_text):
         parts = re.split(r'\(A\)', block, maxsplit=1)
 
         raw_q_text = parts[0].replace(q_num_match.group(0), '')
-        q_text_clean = clean_garbage_text(raw_q_text, keep_pipe=True)
+        q_text_clean = clean_text(raw_q_text)
 
         options_part = ""
         if len(parts) > 1:
@@ -144,7 +105,7 @@ def parse_mcq_text(raw_text):
             else:
                 pattern = rf'\({label1}\)(.*)'
             match = re.search(pattern, options_part, re.DOTALL)
-            return clean_garbage_text(match.group(1), False) if match else ""
+            return clean_text(match.group(1)) if match else ""
 
         parsed_questions.append({
             "q_num": q_num_match.group(1),
@@ -156,7 +117,6 @@ def parse_mcq_text(raw_text):
         })
 
     return parsed_questions
-
 
 # -------------------------------------------------
 # CREATE DOC
@@ -170,19 +130,9 @@ def create_doc(template_path, questions_data):
         doc = Document()
 
     def set_font(run):
-        font_name = 'HindVadodara'
-        run.font.name = font_name
-        run._element.rPr.rFonts.set(qn('w:eastAsia'), font_name)
+        run.font.name = 'HindVadodara'
+        run._element.rPr.rFonts.set(qn('w:eastAsia'), 'HindVadodara')
         run.font.size = Pt(11)
-        run.font.bold = False
-
-    def add_text(paragraph, text):
-        parts = text.split('\n')
-        for i, part in enumerate(parts):
-            run = paragraph.add_run(part)
-            set_font(run)
-            if i < len(parts) - 1:
-                paragraph.add_run().add_break()
 
     for q in questions_data:
 
@@ -190,74 +140,58 @@ def create_doc(template_path, questions_data):
 
         run_num = p.add_run(f"({q['q_num']}) ")
         set_font(run_num)
-        add_text(p, q['question'])
+
+        if math_mode and "\\frac" in q["question"]:
+            frac_match = re.search(r'\\frac\{([^{}]+)\}\{([^{}]+)\}', q["question"])
+            if frac_match:
+                add_stacked_fraction(p, frac_match.group(1), frac_match.group(2))
+            else:
+                p.add_run(q["question"])
+        else:
+            p.add_run(q["question"])
+
         p.add_run().add_break()
 
-        for label in ["A", "B"]:
+        for label in ["A", "B", "C", "D"]:
             p.add_run(f"({label}) ")
             set_font(p.runs[-1])
-            add_text(p, q[label])
-            p.add_run("\t")
-            set_font(p.runs[-1])
-
-        p.add_run().add_break()
-
-        for label in ["C", "D"]:
-            p.add_run(f"({label}) ")
-            set_font(p.runs[-1])
-            add_text(p, q[label])
-            if label == "C":
+            p.add_run(q[label])
+            if label in ["A", "B"]:
                 p.add_run("\t")
-                set_font(p.runs[-1])
+            else:
+                p.add_run().add_break()
 
     output_filename = "Murlidhar_Final_Pro.docx"
     doc.save(output_filename)
     return output_filename
 
-
 # -------------------------------------------------
 # UI
 # -------------------------------------------------
 
-st.subheader("📂 Optional: Upload New Word Template")
-uploaded_template = st.file_uploader("Upload .docx file (optional)", type=["docx"])
+uploaded_template = st.file_uploader("Upload .docx template (optional)", type=["docx"])
+mcq_text = st.text_area("Paste MCQs Here", height=300)
 
-mcq_text = st.text_area("✍️ Paste Raw MCQs Text", height=300)
-
-if st.button("🚀 Generate Paper"):
+if st.button("Generate Paper"):
 
     if not mcq_text.strip():
-        st.error("❌ Please paste MCQs.")
+        st.error("Please paste MCQs.")
         st.stop()
 
-    try:
+    if uploaded_template:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
+            tmp.write(uploaded_template.read())
+            template_path = tmp.name
+    else:
+        response = requests.get(DEFAULT_TEMPLATE_URL)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
+            tmp.write(response.content)
+            template_path = tmp.name
 
-        if uploaded_template is not None:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
-                tmp.write(uploaded_template.read())
-                template_path = tmp.name
-        else:
-            response = requests.get(DEFAULT_TEMPLATE_URL)
-            if response.status_code != 200:
-                st.error("❌ Failed to download default template.")
-                st.stop()
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
-                tmp.write(response.content)
-                template_path = tmp.name
+    q_data = parse_mcq_text(mcq_text)
+    final_file = create_doc(template_path, q_data)
 
-        q_data = parse_mcq_text(mcq_text)
-        final_file = create_doc(template_path, q_data)
+    with open(final_file, "rb") as f:
+        st.download_button("Download File", f, file_name="Murlidhar_Final_Pro.docx")
 
-        st.success(f"✅ {len(q_data)} Questions Processed Successfully!")
-
-        with open(final_file, "rb") as f:
-            st.download_button(
-                "📥 Download Final Paper",
-                f,
-                file_name="Murlidhar_Final_Pro.docx"
-            )
-
-        os.remove(template_path)
-
-    except Exception as e:
-        st.error(f"❌ Error Occurred: {e}")
+    os.remove(template_path)
