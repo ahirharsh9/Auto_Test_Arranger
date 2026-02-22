@@ -1,4 +1,4 @@
-# ★ Murlidhar Academy MCQ Generator (Drive Default + Optional Upload) ★
+# ★ Murlidhar Academy MCQ Generator (Advanced Math Safe Version) ★
 
 import streamlit as st
 import re
@@ -10,20 +10,68 @@ import requests
 import os
 
 # -------------------------------------------------
-# 🔹 CONFIG
+# CONFIG
 # -------------------------------------------------
 
 st.set_page_config(page_title="Murlidhar MCQ Generator", layout="wide")
 
-st.title("📄 Murlidhar Academy MCQ Paper Generator (Pro Spacing)")
+st.title("📄 Murlidhar Academy MCQ Paper Generator (Pro + Math Safe)")
 st.markdown("Default Template: Google Drive | Optional: Upload New Template")
 
-# 🔥 DEFAULT GOOGLE DRIVE TEMPLATE
 DEFAULT_TEMPLATE_URL = "https://docs.google.com/document/d/1JMow6oJ2ASJah5vM4OK1Q-uYPefiMnEg/export?format=docx"
+
+# -------------------------------------------------
+# ADVANCED MATH FORMATTER
+# -------------------------------------------------
+
+def fix_math_formatting(text):
+
+    if not text:
+        return ""
+
+    text = text.replace("$", "")
+
+    # Fractions
+    text = re.sub(r'\\frac\{(.*?)\}\{(.*?)\}', r'\1/\2', text)
+
+    # Root with index (cube root etc)
+    text = re.sub(r'\\sqrt\[(.*?)\]\{(.*?)\}', r'\1√(\2)', text)
+
+    # Normal square root
+    text = re.sub(r'\\sqrt\{(.*?)\}', r'√(\1)', text)
+
+    # Multiply & Divide
+    text = text.replace("\\times", "×")
+    text = text.replace("\\div", "÷")
+
+    # Infinity
+    text = text.replace("\\infty", "∞")
+
+    # Superscripts
+    superscripts = {
+        "0":"⁰","1":"¹","2":"²","3":"³","4":"⁴",
+        "5":"⁵","6":"⁶","7":"⁷","8":"⁸","9":"⁹",
+        "-":"⁻",".":"·","a":"ᵃ","b":"ᵇ","c":"ᶜ",
+        "x":"ˣ","y":"ʸ","z":"ᶻ"
+    }
+
+    def convert_superscript(match):
+        content = match.group(1)
+        return "".join(superscripts.get(ch, ch) for ch in content)
+
+    # ^{...}
+    text = re.sub(r'\^\{(.*?)\}', convert_superscript, text)
+
+    # ^number
+    text = re.sub(r'\^(\-?\d+\.?\d*)', lambda m: convert_superscript(("^{" + m.group(1) + "}")), text)
+
+    text = text.replace("\\", "")
+
+    return text
 
 
 # -------------------------------------------------
-# 🔹 1. TEXT CLEANER
+# TEXT CLEANER
 # -------------------------------------------------
 
 def clean_garbage_text(text, keep_pipe=False):
@@ -34,13 +82,15 @@ def clean_garbage_text(text, keep_pipe=False):
     text = re.sub(r'\[cite.*?\]', '', text)
     text = re.sub(r'\[source.*?\]', '', text)
     text = re.sub(r'\[cite_start\]', '', text)
-    text = text.replace('*', '').replace('\\', '')
 
     if not keep_pipe:
         text = text.replace('|', '')
 
     text = text.replace('\r\n', '\n').replace('\r', '\n')
     text = re.sub(r'\n+', '\n', text)
+
+    # Apply Math Fix
+    text = fix_math_formatting(text)
 
     lines = text.split('\n')
     cleaned_lines = []
@@ -54,7 +104,7 @@ def clean_garbage_text(text, keep_pipe=False):
 
 
 # -------------------------------------------------
-# 🔹 2. PARSE MCQ
+# PARSE MCQ
 # -------------------------------------------------
 
 def parse_mcq_text(raw_text):
@@ -82,32 +132,28 @@ def parse_mcq_text(raw_text):
         if len(parts) > 1:
             options_part = "(A) " + parts[1]
 
-        match_a = re.search(r'\(A\)(.*?)\(B\)', options_part, re.DOTALL)
-        opt_a = clean_garbage_text(match_a.group(1), False) if match_a else ""
-
-        match_b = re.search(r'\(B\)(.*?)\(C\)', options_part, re.DOTALL)
-        opt_b = clean_garbage_text(match_b.group(1), False) if match_b else ""
-
-        match_c = re.search(r'\(C\)(.*?)\(D\)', options_part, re.DOTALL)
-        opt_c = clean_garbage_text(match_c.group(1), False) if match_c else ""
-
-        match_d = re.search(r'\(D\)(.*)', options_part, re.DOTALL)
-        opt_d = clean_garbage_text(match_d.group(1), False) if match_d else ""
+        def extract_option(label1, label2=None):
+            if label2:
+                pattern = rf'\({label1}\)(.*?)\({label2}\)'
+            else:
+                pattern = rf'\({label1}\)(.*)'
+            match = re.search(pattern, options_part, re.DOTALL)
+            return clean_garbage_text(match.group(1), False) if match else ""
 
         parsed_questions.append({
             "q_num": q_num_match.group(1),
             "question": q_text_clean,
-            "A": opt_a,
-            "B": opt_b,
-            "C": opt_c,
-            "D": opt_d
+            "A": extract_option("A", "B"),
+            "B": extract_option("B", "C"),
+            "C": extract_option("C", "D"),
+            "D": extract_option("D", None)
         })
 
     return parsed_questions
 
 
 # -------------------------------------------------
-# 🔹 3. CREATE DOC
+# CREATE DOC
 # -------------------------------------------------
 
 def create_doc(template_path, questions_data):
@@ -164,16 +210,13 @@ def create_doc(template_path, questions_data):
 
 
 # -------------------------------------------------
-# 🔹 4. UI SECTION
+# UI SECTION
 # -------------------------------------------------
 
 st.subheader("📂 Optional: Upload New Word Template")
 uploaded_template = st.file_uploader("Upload .docx file (optional)", type=["docx"])
 
-mcq_text = st.text_area(
-    "✍️ Paste Raw MCQs Text",
-    height=300
-)
+mcq_text = st.text_area("✍️ Paste Raw MCQs Text", height=300)
 
 if st.button("🚀 Generate Paper"):
 
@@ -181,42 +224,34 @@ if st.button("🚀 Generate Paper"):
         st.error("❌ Please paste MCQs.")
         st.stop()
 
-    # -------------------------------------------------
-    # 🔹 TEMPLATE SELECTION LOGIC
-    # -------------------------------------------------
+    try:
 
-    if uploaded_template is not None:
-        st.info("Using uploaded template.")
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
-            tmp.write(uploaded_template.read())
-            template_path = tmp.name
+        if uploaded_template is not None:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
+                tmp.write(uploaded_template.read())
+                template_path = tmp.name
+        else:
+            response = requests.get(DEFAULT_TEMPLATE_URL)
+            if response.status_code != 200:
+                st.error("❌ Failed to download default template.")
+                st.stop()
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
+                tmp.write(response.content)
+                template_path = tmp.name
 
-    else:
-        st.info("Using default Google Drive template.")
-        response = requests.get(DEFAULT_TEMPLATE_URL)
+        q_data = parse_mcq_text(mcq_text)
+        final_file = create_doc(template_path, q_data)
 
-        if response.status_code != 200:
-            st.error("❌ Failed to download default template. Check Google Drive permission.")
-            st.stop()
+        st.success(f"✅ {len(q_data)} Questions Processed Successfully!")
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
-            tmp.write(response.content)
-            template_path = tmp.name
+        with open(final_file, "rb") as f:
+            st.download_button(
+                "📥 Download Final Paper",
+                f,
+                file_name="Murlidhar_Final_Pro.docx"
+            )
 
-    # -------------------------------------------------
-    # 🔹 PROCESS MCQ
-    # -------------------------------------------------
+        os.remove(template_path)
 
-    q_data = parse_mcq_text(mcq_text)
-    final_file = create_doc(template_path, q_data)
-
-    st.success(f"✅ {len(q_data)} Questions Processed Successfully!")
-
-    with open(final_file, "rb") as f:
-        st.download_button(
-            "📥 Download Final Paper",
-            f,
-            file_name="Murlidhar_Final_Pro.docx"
-        )
-
-    os.remove(template_path)
+    except Exception as e:
+        st.error(f"❌ Error Occurred: {e}")
