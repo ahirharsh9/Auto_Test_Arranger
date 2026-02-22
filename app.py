@@ -1,4 +1,4 @@
-# ★ Murlidhar Academy MCQ Generator (Advanced Math Safe Version) ★
+# ★ Murlidhar Academy MCQ Generator (Final Stable Version) ★
 
 import streamlit as st
 import re
@@ -15,13 +15,13 @@ import os
 
 st.set_page_config(page_title="Murlidhar MCQ Generator", layout="wide")
 
-st.title("📄 Murlidhar Academy MCQ Paper Generator (Pro + Math Safe)")
+st.title("📄 Murlidhar Academy MCQ Paper Generator (Final Stable Math)")
 st.markdown("Default Template: Google Drive | Optional: Upload New Template")
 
 DEFAULT_TEMPLATE_URL = "https://docs.google.com/document/d/1JMow6oJ2ASJah5vM4OK1Q-uYPefiMnEg/export?format=docx"
 
 # -------------------------------------------------
-# ADVANCED MATH FORMATTER
+# FINAL SAFE MATH FORMATTER
 # -------------------------------------------------
 
 def fix_math_formatting(text):
@@ -32,38 +32,42 @@ def fix_math_formatting(text):
     text = text.replace("$", "")
 
     # Fractions
-    text = re.sub(r'\\frac\{(.*?)\}\{(.*?)\}', r'\1/\2', text)
+    text = re.sub(r'\\frac\{([^{}]+)\}\{([^{}]+)\}', r'\1/\2', text)
 
-    # Root with index (cube root etc)
-    text = re.sub(r'\\sqrt\[(.*?)\]\{(.*?)\}', r'\1√(\2)', text)
+    # Roots
+    text = re.sub(r'\\sqrt\[([^\]]+)\]\{([^{}]+)\}', r'\1√(\2)', text)
+    text = re.sub(r'\\sqrt\{([^{}]+)\}', r'√(\1)', text)
 
-    # Normal square root
-    text = re.sub(r'\\sqrt\{(.*?)\}', r'√(\1)', text)
-
-    # Multiply & Divide
+    # Symbols
     text = text.replace("\\times", "×")
     text = text.replace("\\div", "÷")
-
-    # Infinity
     text = text.replace("\\infty", "∞")
 
-    # Superscripts
+    # Superscript map
     superscripts = {
         "0":"⁰","1":"¹","2":"²","3":"³","4":"⁴",
         "5":"⁵","6":"⁶","7":"⁷","8":"⁸","9":"⁹",
-        "-":"⁻",".":"·","a":"ᵃ","b":"ᵇ","c":"ᶜ",
-        "x":"ˣ","y":"ʸ","z":"ᶻ"
+        "-":"⁻","+":"⁺",".":"·",
+        "a":"ᵃ","b":"ᵇ","c":"ᶜ",
+        "x":"ˣ","y":"ʸ","z":"ᶻ","n":"ⁿ"
     }
 
-    def convert_superscript(match):
-        content = match.group(1)
+    def convert_to_superscript(content):
         return "".join(superscripts.get(ch, ch) for ch in content)
 
-    # ^{...}
-    text = re.sub(r'\^\{(.*?)\}', convert_superscript, text)
+    # Handle ^{...}
+    text = re.sub(
+        r'\^\{([^{}]+)\}',
+        lambda m: convert_to_superscript(m.group(1)),
+        text
+    )
 
-    # ^number
-    text = re.sub(r'\^(\-?\d+\.?\d*)', lambda m: convert_superscript(("^{" + m.group(1) + "}")), text)
+    # Handle ^n , ^2 , ^n-1 , ^n+1
+    text = re.sub(
+        r'\^([a-zA-Z0-9\+\-\.]+)',
+        lambda m: convert_to_superscript(m.group(1)),
+        text
+    )
 
     text = text.replace("\\", "")
 
@@ -89,7 +93,6 @@ def clean_garbage_text(text, keep_pipe=False):
     text = text.replace('\r\n', '\n').replace('\r', '\n')
     text = re.sub(r'\n+', '\n', text)
 
-    # Apply Math Fix
     text = fix_math_formatting(text)
 
     lines = text.split('\n')
