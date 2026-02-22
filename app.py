@@ -1,4 +1,4 @@
-# ★ Murlidhar Academy: Final Logic (Pro Spacing) - Streamlit Version ★
+# ★ Murlidhar Academy: Final Logic (Pro Spacing) - Google Drive Template Version ★
 
 import streamlit as st
 import re
@@ -6,14 +6,28 @@ from docx import Document
 from docx.shared import Pt
 from docx.oxml.ns import qn
 import tempfile
+import requests
 import os
 
-st.set_page_config(page_title="Murlidhar MCQ Formatter", layout="wide")
+# -------------------------------------------------
+# 🔹 CONFIG
+# -------------------------------------------------
+
+st.set_page_config(page_title="Murlidhar MCQ Generator", layout="wide")
 
 st.title("📄 Murlidhar Academy MCQ Paper Generator (Pro Spacing)")
+st.markdown("Template auto-loaded from Google Drive ✅")
 
-# --- 1. Text Cleaner Function ---
+# 🔥 IMPORTANT: Direct export link (Make sure file is public Viewer)
+TEMPLATE_URL = "https://docs.google.com/document/d/1zKgE-qhVjrz_gGpAZpnUYyS7j6dDZJO0/export?format=docx"
+
+
+# -------------------------------------------------
+# 🔹 1. TEXT CLEANER
+# -------------------------------------------------
+
 def clean_garbage_text(text, keep_pipe=False):
+
     if not text:
         return ""
 
@@ -39,14 +53,19 @@ def clean_garbage_text(text, keep_pipe=False):
     return "\n".join(cleaned_lines)
 
 
-# --- 2. Parse MCQ Logic ---
+# -------------------------------------------------
+# 🔹 2. PARSE MCQ
+# -------------------------------------------------
+
 def parse_mcq_text(raw_text):
+
     question_pattern = re.compile(r'(?=\(\d{2}\))')
     blocks = question_pattern.split(raw_text)
 
     parsed_questions = []
 
     for block in blocks:
+
         if not block.strip():
             continue
 
@@ -87,7 +106,10 @@ def parse_mcq_text(raw_text):
     return parsed_questions
 
 
-# --- 3. Word File Creation ---
+# -------------------------------------------------
+# 🔹 3. CREATE DOC
+# -------------------------------------------------
+
 def create_doc(template_path, questions_data):
 
     try:
@@ -167,9 +189,9 @@ def create_doc(template_path, questions_data):
     return output_filename
 
 
-# --- UI Section ---
-
-template_file = st.file_uploader("📂 Upload Word Template (.docx)", type=["docx"])
+# -------------------------------------------------
+# 🔹 4. UI
+# -------------------------------------------------
 
 mcq_text = st.text_area(
     "✍️ Paste Raw MCQs Text",
@@ -179,17 +201,27 @@ mcq_text = st.text_area(
 
 if st.button("🚀 Generate Paper"):
 
-    if not template_file or not mcq_text.strip():
-        st.error("❌ Please upload template and paste MCQs.")
+    if not mcq_text.strip():
+        st.error("❌ Please paste MCQs.")
     else:
-        with st.spinner("Processing..."):
+        with st.spinner("Downloading template..."):
+
+            response = requests.get(TEMPLATE_URL)
+
+            if response.status_code != 200:
+                st.error("❌ Template download failed. Check Google Drive permission.")
+                st.stop()
 
             with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
-                tmp.write(template_file.read())
+                tmp.write(response.content)
                 template_path = tmp.name
+
+        with st.spinner("Formatting questions..."):
 
             q_data = parse_mcq_text(mcq_text)
             final_file = create_doc(template_path, q_data)
+
+            st.success(f"✅ {len(q_data)} Questions Processed Successfully!")
 
             with open(final_file, "rb") as f:
                 st.download_button(
