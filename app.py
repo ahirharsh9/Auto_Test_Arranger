@@ -1,4 +1,4 @@
-# ★ Murlidhar Academy: Final Logic (Pro Spacing) - Google Drive Template Version ★
+# ★ Murlidhar Academy MCQ Generator (Drive Default + Optional Upload) ★
 
 import streamlit as st
 import re
@@ -16,10 +16,10 @@ import os
 st.set_page_config(page_title="Murlidhar MCQ Generator", layout="wide")
 
 st.title("📄 Murlidhar Academy MCQ Paper Generator (Pro Spacing)")
-st.markdown("Template auto-loaded from Google Drive ✅")
+st.markdown("Default Template: Google Drive | Optional: Upload New Template")
 
-# 🔥 IMPORTANT: Direct export link (Make sure file is public Viewer)
-TEMPLATE_URL = "https://docs.google.com/document/d/1zKgE-qhVjrz_gGpAZpnUYyS7j6dDZJO0/export?format=docx"
+# 🔥 DEFAULT GOOGLE DRIVE TEMPLATE
+DEFAULT_TEMPLATE_URL = "https://docs.google.com/document/d/1JMow6oJ2ASJah5vM4OK1Q-uYPefiMnEg/export?format=docx"
 
 
 # -------------------------------------------------
@@ -132,16 +132,6 @@ def create_doc(template_path, questions_data):
             if i < len(parts) - 1:
                 paragraph.add_run().add_break()
 
-    def get_separator(length):
-        if length > 18:
-            return "SOFT_ENTER"
-        elif 15 <= length <= 17:
-            return "TAB_1"
-        elif 9 <= length <= 14:
-            return "TAB_2"
-        else:
-            return "SPACE_5"
-
     for q in questions_data:
 
         p = doc.add_paragraph()
@@ -151,38 +141,22 @@ def create_doc(template_path, questions_data):
         add_text(p, q['question'])
         p.add_run().add_break()
 
-        len_a = len(q['A'])
-        len_b = len(q['B'])
-        len_c = len(q['C'])
-        len_d = len(q['D'])
+        for label in ["A", "B"]:
+            p.add_run(f"({label}) ")
+            set_font(p.runs[-1])
+            add_text(p, q[label])
+            p.add_run("\t")
+            set_font(p.runs[-1])
 
-        all_short = (len_a <= 8 and len_b <= 8 and len_c <= 8 and len_d <= 8)
+        p.add_run().add_break()
 
-        if all_short:
-            for label in ["A", "B", "C", "D"]:
-                p.add_run(f"({label}) ")
-                set_font(p.runs[-1])
-                add_text(p, q[label])
-                if label != "D":
-                    p.add_run("     ")
-                    set_font(p.runs[-1])
-        else:
-            for label in ["A", "B"]:
-                p.add_run(f"({label}) ")
-                set_font(p.runs[-1])
-                add_text(p, q[label])
+        for label in ["C", "D"]:
+            p.add_run(f"({label}) ")
+            set_font(p.runs[-1])
+            add_text(p, q[label])
+            if label == "C":
                 p.add_run("\t")
                 set_font(p.runs[-1])
-
-            p.add_run().add_break()
-
-            for label in ["C", "D"]:
-                p.add_run(f"({label}) ")
-                set_font(p.runs[-1])
-                add_text(p, q[label])
-                if label == "C":
-                    p.add_run("\t")
-                    set_font(p.runs[-1])
 
     output_filename = "Murlidhar_Final_Pro.docx"
     doc.save(output_filename)
@@ -190,44 +164,59 @@ def create_doc(template_path, questions_data):
 
 
 # -------------------------------------------------
-# 🔹 4. UI
+# 🔹 4. UI SECTION
 # -------------------------------------------------
+
+st.subheader("📂 Optional: Upload New Word Template")
+uploaded_template = st.file_uploader("Upload .docx file (optional)", type=["docx"])
 
 mcq_text = st.text_area(
     "✍️ Paste Raw MCQs Text",
-    height=300,
-    placeholder="(01) Question\n(A) Option1 (B) Option2 (C) Option3 (D) Option4"
+    height=300
 )
 
 if st.button("🚀 Generate Paper"):
 
     if not mcq_text.strip():
         st.error("❌ Please paste MCQs.")
+        st.stop()
+
+    # -------------------------------------------------
+    # 🔹 TEMPLATE SELECTION LOGIC
+    # -------------------------------------------------
+
+    if uploaded_template is not None:
+        st.info("Using uploaded template.")
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
+            tmp.write(uploaded_template.read())
+            template_path = tmp.name
+
     else:
-        with st.spinner("Downloading template..."):
+        st.info("Using default Google Drive template.")
+        response = requests.get(DEFAULT_TEMPLATE_URL)
 
-            response = requests.get(TEMPLATE_URL)
+        if response.status_code != 200:
+            st.error("❌ Failed to download default template. Check Google Drive permission.")
+            st.stop()
 
-            if response.status_code != 200:
-                st.error("❌ Template download failed. Check Google Drive permission.")
-                st.stop()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
+            tmp.write(response.content)
+            template_path = tmp.name
 
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
-                tmp.write(response.content)
-                template_path = tmp.name
+    # -------------------------------------------------
+    # 🔹 PROCESS MCQ
+    # -------------------------------------------------
 
-        with st.spinner("Formatting questions..."):
+    q_data = parse_mcq_text(mcq_text)
+    final_file = create_doc(template_path, q_data)
 
-            q_data = parse_mcq_text(mcq_text)
-            final_file = create_doc(template_path, q_data)
+    st.success(f"✅ {len(q_data)} Questions Processed Successfully!")
 
-            st.success(f"✅ {len(q_data)} Questions Processed Successfully!")
+    with open(final_file, "rb") as f:
+        st.download_button(
+            "📥 Download Final Paper",
+            f,
+            file_name="Murlidhar_Final_Pro.docx"
+        )
 
-            with open(final_file, "rb") as f:
-                st.download_button(
-                    "📥 Download Final Paper",
-                    f,
-                    file_name="Murlidhar_Final_Pro.docx"
-                )
-
-            os.remove(template_path)
+    os.remove(template_path)
